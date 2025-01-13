@@ -2,18 +2,20 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/Infisical/infisical-merge/packages/config"
 	"github.com/Infisical/infisical-merge/packages/models"
 	"github.com/Infisical/infisical-merge/packages/util"
 	"github.com/manifoldco/promptui"
+	"github.com/posthog/posthog-go"
 	"github.com/spf13/cobra"
 )
 
 var userCmd = &cobra.Command{
 	Use:                   "user",
-	Short:                 "Used to manage user credentials",
+	Short:                 "Used to manage local user credentials",
 	DisableFlagsInUseLine: true,
 	Example:               "infisical user",
 	Args:                  cobra.ExactArgs(0),
@@ -78,6 +80,8 @@ var switchCmd = &cobra.Command{
 		if err != nil {
 			util.HandleError(err, "")
 		}
+
+		Telemetry.CaptureEvent("cli-command:user switch", posthog.NewProperties().Set("numberOfLoggedInProfiles", len(loggedInProfiles)).Set("version", util.CLI_VERSION))
 	},
 }
 
@@ -116,7 +120,7 @@ var domainCmd = &cobra.Command{
 
 		domain := ""
 		domainQuery := true
-		if config.INFISICAL_URL_MANUAL_OVERRIDE != util.INFISICAL_DEFAULT_API_URL {
+		if config.INFISICAL_URL_MANUAL_OVERRIDE != fmt.Sprintf("%s/api", util.INFISICAL_DEFAULT_EU_URL) && config.INFISICAL_URL_MANUAL_OVERRIDE != fmt.Sprintf("%s/api", util.INFISICAL_DEFAULT_US_URL) {
 
 			override, err := DomainOverridePrompt()
 			if err != nil {
@@ -174,7 +178,7 @@ var domainCmd = &cobra.Command{
 		if err != nil {
 			util.HandleError(err, "")
 		}
-
+		Telemetry.CaptureEvent("cli-command:user domain", posthog.NewProperties().Set("version", util.CLI_VERSION))
 	},
 }
 
@@ -234,7 +238,7 @@ func NewDomainPrompt() (string, error) {
 		return "", err
 	}
 
-	return domain, nil
+	return util.AppendAPIEndpoint(domain), nil
 }
 
 func LoggedInUsersPrompt(profiles []string) (string, error) {

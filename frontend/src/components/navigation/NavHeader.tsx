@@ -1,11 +1,28 @@
-import Link from 'next/link';
-import { useRouter } from 'next/router';
-import { faAngleRight } from '@fortawesome/free-solid-svg-icons';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { useState } from "react";
+import { faAngleRight, faCheck, faCopy, faLock } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { Link, useParams } from "@tanstack/react-router";
+import { twMerge } from "tailwind-merge";
 
-import { useOrganization, useWorkspace } from '@app/context';
+import { useOrganization, useWorkspace } from "@app/context";
+import { useToggle } from "@app/hooks";
+import { ProjectType } from "@app/hooks/api/workspace/types";
 
-import { Select, SelectItem, Tooltip } from '../v2';
+import { createNotification } from "../notifications";
+import { IconButton, Select, SelectItem, Tooltip } from "../v2";
+
+type Props = {
+  pageName: string;
+  isProjectRelated?: boolean;
+  isOrganizationRelated?: boolean;
+  currentEnv?: string;
+  userAvailableEnvs?: any[];
+  onEnvChange?: (slug: string) => void;
+  secretPath?: string;
+  isFolderMode?: boolean;
+  isProtectedBranch?: boolean;
+  protectionPolicyName?: string;
+};
 
 // TODO: make links clickable and clean up
 
@@ -28,30 +45,43 @@ export default function NavHeader({
   isProjectRelated,
   isOrganizationRelated,
   currentEnv,
-  userAvailableEnvs,
-  onEnvChange
-}: {
-  pageName: string;
-  isProjectRelated?: boolean;
-  isOrganizationRelated?: boolean;
-  currentEnv?: string;
-  userAvailableEnvs?: any[];
-  onEnvChange?: (slug: string) => void;
-}): JSX.Element {
+  userAvailableEnvs = [],
+  onEnvChange,
+  isFolderMode,
+  secretPath = "/",
+  isProtectedBranch = false,
+  protectionPolicyName
+}: Props): JSX.Element {
   const { currentWorkspace } = useWorkspace();
   const { currentOrg } = useOrganization();
-  const router = useRouter();
+
+  const [isCopied, { timedToggle: toggleIsCopied }] = useToggle(false);
+  const [isHoveringCopyButton, setIsHoveringCopyButton] = useState(false);
+
+  const routerEnvSlug = useParams({
+    strict: false,
+    select: (el) => el.envSlug
+  });
+
+  const secretPathSegments = secretPath.split("/").filter(Boolean);
 
   return (
-    <div className="ml-6 flex flex-row items-center pt-8">
-      <div className="mr-2 flex h-6 w-6 items-center justify-center rounded-md bg-primary-900 text-mineshaft-100">
+    <div className="flex flex-row items-center pt-6">
+      <div className="mr-2 flex h-5 w-5 min-w-[1.25rem] items-center justify-center rounded-md bg-primary text-sm text-black">
         {currentOrg?.name?.charAt(0)}
       </div>
-      <div className="text-sm font-semibold text-bunker-300">{currentOrg?.name}</div>
+      <Link
+        to="/organization/secret-manager/overview"
+        className="truncate pl-0.5 text-sm font-semibold text-primary/80 hover:text-primary"
+      >
+        {currentOrg?.name}
+      </Link>
       {isProjectRelated && (
         <>
           <FontAwesomeIcon icon={faAngleRight} className="ml-3 mr-3 text-xs text-gray-400" />
-          <div className="text-sm font-semibold text-bunker-300">{currentWorkspace?.name}</div>
+          <div className="truncate text-sm font-semibold text-bunker-300">
+            {currentWorkspace?.name}
+          </div>
         </>
       )}
       {isOrganizationRelated && (
@@ -61,28 +91,28 @@ export default function NavHeader({
         </>
       )}
       <FontAwesomeIcon icon={faAngleRight} className="ml-3 mr-3 text-sm text-gray-400" />
-      {pageName === 'Secrets' ? (
+      {pageName === "Secrets" ? (
         <Link
-          passHref
-          legacyBehavior
-          href={{ pathname: '/dashboard/[id]', query: { id: router.query.id } }}
+          to={`/${ProjectType.SecretManager}/$projectId/overview` as const}
+          params={{ projectId: currentWorkspace.id }}
+          className="text-sm font-semibold text-primary/80 hover:text-primary"
         >
-          <a className="text-sm font-semibold text-primary/80 hover:text-primary">{pageName}</a>
+          {pageName}
         </Link>
       ) : (
         <div className="text-sm text-gray-400">{pageName}</div>
       )}
-      {currentEnv && (
+      {currentEnv && secretPath === "/" && (
         <>
           <FontAwesomeIcon icon={faAngleRight} className="ml-3 mr-1.5 text-xs text-gray-400" />
           <div className="rounded-md pl-3 hover:bg-bunker-100/10">
             <Tooltip content="Select environment">
               <Select
-                value={userAvailableEnvs?.filter((uae) => uae.name === currentEnv)[0]?.slug}
+                value={currentEnv}
                 onValueChange={(value) => {
                   if (value && onEnvChange) onEnvChange(value);
                 }}
-                className="bg-transparent pl-0 text-sm font-medium text-primary/80 hover:text-primary"
+                className="border-none bg-transparent pl-0 text-sm font-medium text-primary/80 hover:text-primary"
                 dropdownContainerClassName="text-bunker-200 bg-mineshaft-800 border border-mineshaft-600 drop-shadow-2xl"
               >
                 {userAvailableEnvs?.map(({ name, slug }) => (
@@ -94,6 +124,94 @@ export default function NavHeader({
             </Tooltip>
           </div>
         </>
+      )}
+      {isFolderMode && routerEnvSlug && Boolean(secretPathSegments.length) && (
+        <div className="flex items-center space-x-3">
+          <FontAwesomeIcon icon={faAngleRight} className="ml-3 mr-1.5 text-xs text-gray-400" />
+          <Link
+            to={`/${ProjectType.SecretManager}/$projectId/secrets/$envSlug` as const}
+            params={{ projectId: currentWorkspace.id, envSlug: routerEnvSlug }}
+            className="text-sm font-semibold text-primary/80 hover:text-primary"
+          >
+            {userAvailableEnvs?.find(({ slug }) => slug === currentEnv)?.name}
+          </Link>
+        </div>
+      )}
+      {isFolderMode &&
+        secretPathSegments?.map((folderName, index) => {
+          const newSecretPath = `/${secretPathSegments.slice(0, index + 1).join("/")}`;
+
+          return (
+            <div
+              className="flex items-center space-x-3"
+              key={`breadcrumb-secret-path-${folderName}`}
+            >
+              <FontAwesomeIcon icon={faAngleRight} className="ml-3 mr-1.5 text-xs text-gray-400" />
+              {index + 1 === secretPathSegments?.length ? (
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={twMerge(
+                      "text-sm font-semibold transition-all",
+                      isHoveringCopyButton ? "text-bunker-200" : "text-bunker-300"
+                    )}
+                  >
+                    {folderName}
+                  </span>
+                  <Tooltip
+                    className="relative right-2"
+                    position="bottom"
+                    content="Copy secret path"
+                  >
+                    <IconButton
+                      variant="plain"
+                      ariaLabel="copy"
+                      onMouseEnter={() => setIsHoveringCopyButton(true)}
+                      onMouseLeave={() => setIsHoveringCopyButton(false)}
+                      onClick={() => {
+                        if (isCopied) return;
+
+                        navigator.clipboard.writeText(newSecretPath);
+
+                        createNotification({
+                          text: "Copied secret path to clipboard",
+                          type: "info"
+                        });
+
+                        toggleIsCopied(2000);
+                      }}
+                      className="hover:bg-bunker-100/10"
+                    >
+                      <FontAwesomeIcon
+                        icon={!isCopied ? faCopy : faCheck}
+                        size="sm"
+                        className="cursor-pointer"
+                      />
+                    </IconButton>
+                  </Tooltip>
+                </div>
+              ) : (
+                <Link
+                  to={`/${ProjectType.SecretManager}/$projectId/secrets/$envSlug` as const}
+                  params={{
+                    projectId: currentWorkspace.id,
+                    envSlug: routerEnvSlug || ""
+                  }}
+                  search={(query) => ({ ...query, secretPath: newSecretPath })}
+                  className={twMerge(
+                    "text-sm font-semibold transition-all hover:text-primary",
+                    isHoveringCopyButton ? "text-primary" : "text-primary/80"
+                  )}
+                >
+                  {folderName}
+                </Link>
+              )}
+            </div>
+          );
+        })}
+      {isProtectedBranch && (
+        <Tooltip content={`Protected by policy ${protectionPolicyName}`}>
+          <FontAwesomeIcon icon={faLock} className="ml-2 text-primary" />
+        </Tooltip>
       )}
     </div>
   );
