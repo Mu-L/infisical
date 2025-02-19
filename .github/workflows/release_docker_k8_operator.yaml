@@ -1,10 +1,16 @@
-name: Release Docker image for K8 operator 
-on: [workflow_dispatch]
+name: Release image + Helm chart K8s Operator
+on:
+  push:
+    tags:
+      - "infisical-k8-operator/v*.*.*"
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Extract version from tag
+        id: extract_version
+        run: echo "::set-output name=version::${GITHUB_REF_NAME#infisical-k8-operator/}"
       - uses: actions/checkout@v2
 
       - name: 🔧 Set up QEMU
@@ -26,4 +32,21 @@ jobs:
           context: k8-operator
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: infisical/kubernetes-operator:latest
+          tags: |
+            infisical/kubernetes-operator:latest
+            infisical/kubernetes-operator:${{ steps.extract_version.outputs.version }}
+
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.10.0
+      - name: Install python
+        uses: actions/setup-python@v4
+      - name: Install Cloudsmith CLI
+        run: pip install --upgrade cloudsmith-cli
+      - name: Build and push helm package to Cloudsmith
+        run: cd helm-charts && sh upload-k8s-operator-cloudsmith.sh
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
